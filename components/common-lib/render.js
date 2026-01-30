@@ -26,8 +26,8 @@ export default async function (path, params, cfg) {
     },
     sys: {
       scale: 1,
-      copyright: `<div style="text-align:center">Bot:&nbsp;<span style="color:Pink;">白子</span><span style="color:White;"> & API:<span style="color:Pink;">
-487106390<span style="color:White;"><br>Created By TRSS-Yunzai<span class="version">${Version.yunzai}</span> &nbsp jiuxian-plugin<span class="version">${Version.ver}</span>`
+      copyright: `<div style="text-align:center">Bot:&nbsp;<span style="color:Pink;">真寻</span><span style="color:White;"> & 主人Q群:<span style="color:Pink;">
+487100<span style="color:White;"><br>Created By TRSS-Yunzai<span class="version">${Version.yunzai}</span> &nbsp jiuxian-plugin<span class="version">${Version.ver}</span>`
     },
 	quality: 100
   }
