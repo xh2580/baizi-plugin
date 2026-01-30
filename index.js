@@ -13,7 +13,7 @@ logger.info('\x1b[34m---------哼哼啊啊啊---------\x1b[0m') // 蓝色
 // 动态加载插件
 async function loadPlugins() {
   const files = fs
-    .readdirSync('./plugins/jiuxian-plugin/apps')
+    .readdirSync('./plugins/baizi-plugin/apps')
     .filter(file => file.endsWith('.js'))
 
   let ret = files.map(file => import(`./apps/${file}`));
