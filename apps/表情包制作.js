@@ -33,8 +33,6 @@ export class zaizaiimagegen extends plugin {
         { reg: /^#?天生一对\s+(\S+)\s+(\S+)$/i, fnc: 'tsyd' },
         { reg: /^#?奇怪龙\s+(\S+)\s+(\S+)$/i, fnc: 'lt' },
         { reg: /^#?牵\s*@(\d+)/i, fnc: 'qian' },
-        { reg: /^#?(射|🐍)他\s*@(\d+)/i, fnc: 'she' },
-        { reg: /^#?开导\s*@(\d+)/i, fnc: 'kaidao' },
         { reg: /^#?QQ个性名片\s+(\d+)\s+(\d+)\s+([\s\S]+?)$/i, fnc: 'qqCard' }
       ]
     });
@@ -106,9 +104,4 @@ export class zaizaiimagegen extends plugin {
 
   const apiUrl = API_CONFIG.QQ_CARD(params[1], params[2], params[3]);
   return this.sendGeneratedImage(e, apiUrl);
-}
-
-
-  async she(e) { return this.handleSpecialEffect(e, 'SHE'); }
-  async kaidao(e) { return this.handleSpecialEffect(e, 'KAIDAO'); }
 }
