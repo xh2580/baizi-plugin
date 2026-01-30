@@ -146,7 +146,7 @@ export class ZanzhuPlugin extends plugin {
             left: -10px; 
             width: 150%; 
             height: 150%; 
-            background: url('http://8.134.11.131/image/tx.png') no-repeat center center; 
+            background: url("http://8.134.11.131/image/tx.png") no-repeat center center; 
             background-size: cover; 
             pointer-events: none; 
           }
