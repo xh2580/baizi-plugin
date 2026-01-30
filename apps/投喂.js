@@ -3,8 +3,11 @@ import path from 'path';
 import plugin from '../../../lib/plugins/plugin.js';
 import axios from 'axios';
 import https from 'https';
-import { exec } from 'child_process';
+import { fileURLToPath } from 'url';
 
+// 获取当前文件路径
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const zanzhuPath = path.join(process.cwd(), 'plugins', 'baizi-plugin', 'config', 'zanzhu.json');
 
 export class ZanzhuPlugin extends plugin {
@@ -34,10 +37,14 @@ export class ZanzhuPlugin extends plugin {
       ]
     });
     
-    // 创建临时目录用于保存下载的头像
-    this.tempDir = path.join(process.cwd(), 'plugins', 'baizi-plugin', 'data', 'temp');
-    if (!fs.existsSync(this.tempDir)) {
-      fs.mkdirSync(this.tempDir, { recursive: true });
+    // 使用绝对路径
+    this.tempDir = path.join(__dirname, '../data/temp');
+    this.ensureDirExists(this.tempDir);
+  }
+
+  ensureDirExists(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+      fs.mkdirSync(dirPath, { recursive: true });
     }
   }
 
@@ -49,7 +56,7 @@ export class ZanzhuPlugin extends plugin {
       const data = JSON.parse(fs.readFileSync(zanzhuPath, 'utf8'));
       return data.map(item => ({
         qqnumber: String(item.qqnumber),
-        money: item.money
+        money: parseFloat(item.money)
       })).sort((a, b) => b.money - a.money);
     } catch (e) {
       console.error('读取数据失败:', e.message);
@@ -60,9 +67,7 @@ export class ZanzhuPlugin extends plugin {
   async saveData(data) {
     try {
       const dirPath = path.dirname(zanzhuPath);
-      if (!fs.existsSync(dirPath)) {
-        fs.mkdirSync(dirPath, { recursive: true });
-      }
+      this.ensureDirExists(dirPath);
       fs.writeFileSync(zanzhuPath, JSON.stringify(data, null, 2));
     } catch (e) {
       console.error('保存数据失败:', e.message);
@@ -169,23 +174,28 @@ export class ZanzhuPlugin extends plugin {
 
   async getQQInfo(qqnumber) {
     try {
-      const response = await axios.get(`http://baizihaoxiao.xin/API/qqapi.php?qq=${qqnumber}`, { 
-        timeout: 5000 
+      const response = await axios.get(`http://baizihaoxiao.xin/API/qqapi.php?qq=${qqnumber}`, {
+        timeout: 5000,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
       });
       
-      if (response.data.code === 1 && response.data.data) {
+      if (response.data && response.data.code === 1 && response.data.data) {
         const data = response.data.data;
         return {
           success: true,
           nickname: data.name || `用户${this.hideQQNumber(qqnumber)}`,
-          avatar: data.imgurl || `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=640`,
+          avatar: data.imgurl || `https://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=640`,
           uin: data.uin || qqnumber
         };
       }
+      
+      // API返回格式不符合预期时使用默认信息
       return {
         success: false,
         nickname: `用户${this.hideQQNumber(qqnumber)}`,
-        avatar: `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=640`,
+        avatar: `https://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=640`,
         uin: qqnumber
       };
     } catch (e) {
@@ -193,7 +203,7 @@ export class ZanzhuPlugin extends plugin {
       return {
         success: false,
         nickname: `用户${this.hideQQNumber(qqnumber)}`,
-        avatar: `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=640`,
+        avatar: `https://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=640`,
         uin: qqnumber
       };
     }
@@ -210,19 +220,17 @@ export class ZanzhuPlugin extends plugin {
     return `${index + 1}`;
   }
 
-  async downloadImage(url, filename) {
+  async downloadImage(url) {
     return new Promise((resolve, reject) => {
+      const filename = `avatar_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.jpg`;
       const filePath = path.join(this.tempDir, filename);
       
-      // 如果文件已存在，直接返回路径
-      if (fs.existsSync(filePath)) {
-        resolve(filePath);
-        return;
-      }
-      
       const file = fs.createWriteStream(filePath);
+      
       const request = https.get(url, (response) => {
         if (response.statusCode !== 200) {
+          file.close();
+          fs.unlinkSync(filePath);
           reject(new Error(`下载失败: ${response.statusCode}`));
           return;
         }
@@ -230,67 +238,24 @@ export class ZanzhuPlugin extends plugin {
         response.pipe(file);
         file.on('finish', () => {
           file.close();
-          resolve(filePath);
+          // 返回文件路径，使用file:///协议
+          resolve(`file:///${filePath.replace(/\\/g, '/')}`);
         });
       }).on('error', (err) => {
-        fs.unlink(filePath, () => {});
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
         reject(err);
       });
       
-      request.setTimeout(10000, () => {
+      request.setTimeout(5000, () => {
         request.destroy();
-        fs.unlink(filePath, () => {});
+        if (fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
         reject(new Error('下载超时'));
       });
     });
-  }
-
-  async sendSponsorWithAvatar(e, sponsor, index, isLast = false) {
-    const { qqnumber, money, qqInfo, rank, moneyStr, hiddenQQ } = sponsor;
-    
-    try {
-      // 下载头像图片
-      const filename = `avatar_${qqnumber}_${Date.now()}.jpg`;
-      const avatarPath = await this.downloadImage(qqInfo.avatar, filename);
-      
-      // 发送头像图片和赞助者信息
-      await e.reply([
-        segment.image(`file:///${avatarPath}`),
-        `\n${rank} ${qqInfo.nickname}\n`,
-        `ID: ${hiddenQQ}\n`,
-        `金额: ${moneyStr}`
-      ].join(''));
-      
-      // 如果不是最后一个赞助者，发送分隔线
-      if (!isLast) {
-        await e.reply('─'.repeat(24));
-      }
-    } catch (err) {
-      console.error(`发送赞助者信息失败 (QQ: ${qqnumber}):`, err.message);
-      
-      // 如果发送图片失败，只发送文字信息
-      const textMessage = 
-        `${rank} ${qqInfo.nickname}\n` +
-        `ID: ${hiddenQQ}\n` +
-        `金额: ${moneyStr}`;
-      
-      await e.reply(textMessage);
-      
-      if (!isLast) {
-        await e.reply('─'.repeat(24));
-      }
-    }
-  }
-
-  async sendTextOnlySponsors(e, sponsors, startIndex) {
-    let message = '';
-    for (let i = startIndex; i < sponsors.length; i++) {
-      const sponsor = sponsors[i];
-      message += `${sponsor.rank} ${sponsor.qqInfo.nickname} - ${sponsor.moneyStr}\n`;
-    }
-    if (message) {
-      await e.reply(message);
-    }
   }
 
   async showZanzhu(e) {
@@ -302,7 +267,7 @@ export class ZanzhuPlugin extends plugin {
         return await e.reply('暂无赞助数据，快来成为第一个投喂者吧！(๑•̀ㅂ•́)و✧');
       }
 
-      // 获取所有赞助者的QQ信息
+      // 获取所有QQ信息
       const qqInfoPromises = data.map(item => this.getQQInfo(item.qqnumber));
       const qqInfoResults = await Promise.allSettled(qqInfoPromises);
       
@@ -318,7 +283,7 @@ export class ZanzhuPlugin extends plugin {
           qqInfo = {
             success: false,
             nickname: `用户${this.hideQQNumber(item.qqnumber)}`,
-            avatar: `http://q1.qlogo.cn/g?b=qq&nk=${item.qqnumber}&s=640`,
+            avatar: `https://q1.qlogo.cn/g?b=qq&nk=${item.qqnumber}&s=640`,
             uin: item.qqnumber
           };
         }
@@ -332,40 +297,108 @@ export class ZanzhuPlugin extends plugin {
         });
       }
 
-      // 发送顶部标题
-      await e.reply([
-        '┏━━━━━━━━━━━━━━━━━━━━━━━━┓\n',
-        '┃      🐾 白子の投喂榜 🐾      ┃\n',
-        '┗━━━━━━━━━━━━━━━━━━━━━━━━┛'
-      ].join(''));
-      
-      // 限制显示数量，避免刷屏，最多显示前10名带头像
-      const displayLimit = Math.min(sponsors.length, 10);
-      
-      // 发送前3名赞助者的详细信息（带头像）
-      for (let i = 0; i < Math.min(3, displayLimit); i++) {
-        await this.sendSponsorWithAvatar(e, sponsors[i], i, i === displayLimit - 1);
+      // 创建消息数组，用于合并发送
+      const messages = [];
+
+      // 添加标题
+      messages.push('┏━━━━━━━━━━━━━━━━━━━━━━━━┓');
+      messages.push('┃      🐾 白子の投喂榜 🐾      ┃');
+      messages.push('┗━━━━━━━━━━━━━━━━━━━━━━━━┛\n');
+
+      // 处理前3名（显示详细信息和头像）
+      const displayCount = Math.min(sponsors.length, 10);
+      const topSponsors = sponsors.slice(0, 3);
+      const otherSponsors = sponsors.slice(3, displayCount);
+      const remainingSponsors = sponsors.slice(displayCount);
+
+      // 处理前三名赞助者
+      for (let i = 0; i < Math.min(3, displayCount); i++) {
+        const sponsor = topSponsors[i];
+        
+        // 下载头像
+        let avatarUrl = '';
+        try {
+          avatarUrl = await this.downloadImage(sponsor.qqInfo.avatar);
+        } catch (error) {
+          avatarUrl = ''; // 如果下载失败，就不显示头像
+        }
+        
+        // 构建消息
+        let message = '';
+        if (avatarUrl) {
+          message += segment.image(avatarUrl) + '\n';
+        }
+        
+        // 添加排名和用户信息
+        let rankIcon = '';
+        if (i === 0) rankIcon = '👑 ';
+        else if (i === 1) rankIcon = '💎 ';
+        else if (i === 2) rankIcon = '✨ ';
+        
+        message += `${rankIcon}${sponsor.rank} ${sponsor.qqInfo.nickname}\n`;
+        message += `ID: ${sponsor.hiddenQQ}\n`;
+        message += `金额: ${sponsor.moneyStr}\n`;
+        
+        if (i < Math.min(3, displayCount) - 1) {
+          message += '─'.repeat(24);
+        }
+        
+        messages.push(message);
       }
-      
-      // 发送第4-10名赞助者的详细信息（带头像）
-      if (displayLimit > 3) {
-        for (let i = 3; i < displayLimit; i++) {
-          await this.sendSponsorWithAvatar(e, sponsors[i], i, i === displayLimit - 1);
+
+      // 如果还有第4-10名，继续添加
+      if (otherSponsors.length > 0) {
+        for (let i = 0; i < otherSponsors.length; i++) {
+          const sponsor = otherSponsors[i];
+          
+          // 下载头像
+          let avatarUrl = '';
+          try {
+            avatarUrl = await this.downloadImage(sponsor.qqInfo.avatar);
+          } catch (error) {
+            avatarUrl = ''; // 如果下载失败，就不显示头像
+          }
+          
+          // 构建消息
+          let message = '';
+          if (avatarUrl) {
+            message += segment.image(avatarUrl) + '\n';
+          }
+          
+          // 添加排名和用户信息
+          message += `${sponsor.rank} ${sponsor.qqInfo.nickname}\n`;
+          message += `ID: ${sponsor.hiddenQQ}\n`;
+          message += `金额: ${sponsor.moneyStr}\n`;
+          
+          if (i < otherSponsors.length - 1 || remainingSponsors.length > 0) {
+            message += '─'.repeat(24);
+          }
+          
+          messages.push(message);
         }
       }
-      
-      // 如果还有更多赞助者，以文字形式显示
-      if (sponsors.length > displayLimit) {
-        await e.reply(`\n💫 其他赞助者 💫\n`);
-        await this.sendTextOnlySponsors(e, sponsors, displayLimit);
-      }
-      
-      // 计算并发送统计信息
-      const totalAmount = data.reduce((sum, item) => sum + item.money, 0);
-      const totalSponsors = data.length;
-      const avgAmount = totalSponsors > 0 ? totalAmount / totalSponsors : 0;
-      const maxAmount = data.length > 0 ? Math.max(...data.map(item => item.money)) : 0;
 
+      // 如果还有更多赞助者，添加其他赞助者部分
+      if (remainingSponsors.length > 0) {
+        messages.push('\n💫 其他赞助者 💫');
+        const otherMessage = remainingSponsors.slice(0, 20).map(sponsor => 
+          `${sponsor.rank} ${sponsor.qqInfo.nickname} - ${sponsor.moneyStr}`
+        ).join('\n');
+        
+        if (remainingSponsors.length > 20) {
+          messages.push(otherMessage + `\n...等 ${remainingSponsors.length - 20} 位赞助者`);
+        } else {
+          messages.push(otherMessage);
+        }
+      }
+
+      // 计算统计信息
+      const totalAmount = sponsors.reduce((sum, item) => sum + item.money, 0);
+      const totalSponsors = sponsors.length;
+      const avgAmount = totalSponsors > 0 ? totalAmount / totalSponsors : 0;
+      const maxAmount = sponsors.length > 0 ? Math.max(...sponsors.map(item => item.money)) : 0;
+
+      // 添加统计信息
       const statsMessage = 
         '\n📊 投喂统计 📊\n' +
         '═'.repeat(24) + '\n' +
@@ -377,40 +410,44 @@ export class ZanzhuPlugin extends plugin {
         '💕 感谢各位大大的支持！ 💕\n' +
         '© liusu 2024-2026';
       
-      await e.reply(statsMessage);
-      
-      // 清理旧的头像文件（保留最近10个）
+      messages.push(statsMessage);
+
+      // 合并所有消息为一条并发送
+      const finalMessage = messages.join('\n');
+      await e.reply(finalMessage);
+
+      // 清理临时文件
       this.cleanOldAvatarFiles();
       
     } catch (err) {
       console.error('showZanzhu 执行失败:', err);
-      console.error('错误详情:', err.stack);
-      await e.reply('发生错误，请稍后重试');
+      await e.reply('生成榜单时发生错误，请稍后重试');
     }
   }
 
   cleanOldAvatarFiles() {
     try {
-      const files = fs.readdirSync(this.tempDir);
-      const avatarFiles = files.filter(file => file.startsWith('avatar_') && (file.endsWith('.jpg') || file.endsWith('.png')));
+      if (!fs.existsSync(this.tempDir)) return;
       
-      // 按修改时间排序，保留最新的20个文件
-      if (avatarFiles.length > 20) {
-        const filesWithStats = avatarFiles.map(file => {
+      const files = fs.readdirSync(this.tempDir);
+      const now = Date.now();
+      
+      files.forEach(file => {
+        if (file.startsWith('avatar_')) {
           const filePath = path.join(this.tempDir, file);
-          const stats = fs.statSync(filePath);
-          return { file, mtime: stats.mtime, path: filePath };
-        });
-        
-        filesWithStats.sort((a, b) => b.mtime - a.mtime);
-        
-        // 删除旧文件
-        for (let i = 20; i < filesWithStats.length; i++) {
-          fs.unlinkSync(filesWithStats[i].path);
+          try {
+            const stats = fs.statSync(filePath);
+            // 删除5分钟前的文件
+            if (now - stats.mtimeMs > 300000) {
+              fs.unlinkSync(filePath);
+            }
+          } catch (e) {
+            // 忽略错误
+          }
         }
-      }
+      });
     } catch (err) {
-      console.error('清理头像文件失败:', err.message);
+      // 忽略清理错误
     }
   }
 }
