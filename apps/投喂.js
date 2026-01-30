@@ -17,7 +17,7 @@ export class ZanzhuPlugin extends plugin {
       priority: 1,
       rule: [
         {
-          reg: '^#?赞助添加\\s*(\\d+):(\\d+(\\.\\d+)?)$',
+          reg: '^#?赞助添加\\s*(\\d+):(\\d+(\\.\d+)?)$',
           fnc: 'addZanzhu'
         },
         {
@@ -36,7 +36,8 @@ export class ZanzhuPlugin extends plugin {
     });
 
     this.browser = null;
-    this.screenshotDir = path.join(process.cwd(), 'data', 'temp');
+    // 修改保存路径到插件目录
+    this.screenshotDir = path.join(process.cwd(), 'plugins', 'baizi-plugin', 'data', 'temp');
     if (!fs.existsSync(this.screenshotDir)) {
       fs.mkdirSync(this.screenshotDir, { recursive: true });
     }
@@ -291,8 +292,8 @@ export class ZanzhuPlugin extends plugin {
     
     try {
       console.log('正在启动浏览器...');
-      const chromiumPath = cfg?.bot?.chromium_path || null;
       
+      // 简化浏览器启动选项
       const launchOptions = {
         headless: true,
         args: [
@@ -304,13 +305,14 @@ export class ZanzhuPlugin extends plugin {
           '--no-first-run',
           '--no-zygote',
           '--single-process',
-          '--disable-web-security',
-          '--disable-features=site-per-process'
-        ]
+          '--disable-web-security'
+        ],
+        timeout: 30000
       };
       
-      if (chromiumPath) {
-        launchOptions.executablePath = chromiumPath;
+      // 如果有配置浏览器路径就使用
+      if (cfg?.bot?.chromium_path) {
+        launchOptions.executablePath = cfg.bot.chromium_path;
       }
       
       this.browser = await puppeteer.launch(launchOptions);
@@ -318,6 +320,7 @@ export class ZanzhuPlugin extends plugin {
       return this.browser;
     } catch (error) {
       console.error('浏览器启动失败:', error.message);
+      console.error('错误详情:', error.stack);
       this.browser = null;
       return null;
     }
@@ -336,44 +339,57 @@ export class ZanzhuPlugin extends plugin {
       
       console.log('正在生成截图...');
       
-      // 设置视口大小
+      // 设置更小的视口
       await page.setViewport({
         width: 450,
         height: 700,
-        deviceScaleFactor: 2
+        deviceScaleFactor: 1
       });
       
-      // 设置请求拦截，避免外部资源加载问题
+      // 禁用图片加载以加快速度
       await page.setRequestInterception(true);
       page.on('request', (req) => {
-        // 允许必要的资源
-        if (['document', 'stylesheet', 'font', 'image'].includes(req.resourceType())) {
-          req.continue();
-        } else {
+        if (['image', 'stylesheet', 'font'].includes(req.resourceType())) {
           req.abort();
+        } else {
+          req.continue();
         }
       });
       
-      // 设置页面内容
+      // 增加超时时间，使用更简单的等待条件
       await page.setContent(htmlContent, {
-        waitUntil: 'networkidle0',
-        timeout: 30000
+        waitUntil: 'domcontentloaded',
+        timeout: 60000
       });
       
-      // 等待页面完全渲染
-      await page.waitForTimeout(1000);
+      // 等待页面渲染完成
+      await page.waitForTimeout(2000);
       
       const screenshotPath = path.join(this.screenshotDir, `zanzhu_${Date.now()}.png`);
       console.log('截图保存路径:', screenshotPath);
       
-      // 使用完整页面截图
-      await page.screenshot({
+      // 截图选项
+      const screenshotOptions = {
         path: screenshotPath,
-        fullPage: true,
+        fullPage: false,
         type: 'png',
-        quality: 100,
-        omitBackground: false
+        quality: 90
+      };
+      
+      // 计算需要的高度
+      const height = await page.evaluate(() => {
+        return document.documentElement.scrollHeight;
       });
+      
+      screenshotOptions.fullPage = true;
+      screenshotOptions.clip = {
+        x: 0,
+        y: 0,
+        width: 450,
+        height: Math.min(height, 2000) // 限制最大高度
+      };
+      
+      await page.screenshot(screenshotOptions);
       
       console.log('截图生成成功');
       return screenshotPath;
@@ -381,7 +397,7 @@ export class ZanzhuPlugin extends plugin {
       console.error('生成截图失败:', err.message);
       console.error('错误详情:', err.stack);
       
-      // 尝试保存HTML内容到文件，以便调试
+      // 保存HTML到文件，以便调试
       try {
         const htmlPath = path.join(this.screenshotDir, `debug_${Date.now()}.html`);
         fs.writeFileSync(htmlPath, htmlContent);
@@ -419,23 +435,42 @@ export class ZanzhuPlugin extends plugin {
       if (!imagePath) {
         console.error('生成截图失败，检查日志获取详细信息');
         
-        // 尝试检查浏览器状态
-        if (!this.browser) {
-          console.log('浏览器未启动，尝试重新启动...');
-          this.browser = null;
-          await this.initBrowser();
-        }
+        // 尝试备用方案：使用文本格式返回
+        let message = '🐾 白子 の投喂榜 🐾\n\n';
+        data.forEach((item, index) => {
+          message += `${index + 1}. QQ: ${this.hideQQNumber(item.qqnumber)} - ¥${item.money.toFixed(2)}\n`;
+        });
         
-        return await e.reply('生成截图失败，可能是浏览器配置问题，请检查日志或联系管理员');
+        const totalAmount = data.reduce((sum, item) => sum + item.money, 0);
+        message += `\n✿ 总投喂金额: ¥${totalAmount.toFixed(2)}\n`;
+        message += `✿ 总投喂人数: ${data.length}\n\n`;
+        message += '© liusu 2024-2026';
+        
+        return await e.reply(message);
       }
 
       console.log('准备发送图片:', imagePath);
+      
+      // 确保文件存在
+      if (!fs.existsSync(imagePath)) {
+        console.error('截图文件不存在:', imagePath);
+        return await e.reply('生成截图失败，文件未创建成功');
+      }
+      
+      // 检查文件大小
+      const stats = fs.statSync(imagePath);
+      if (stats.size === 0) {
+        console.error('截图文件为空:', imagePath);
+        return await e.reply('生成截图失败，文件为空');
+      }
+      
       await e.reply([segment.image(`file:///${imagePath}`)]);
       
       // 清理旧截图文件
       this.cleanOldScreenshots();
     } catch (err) {
       console.error('showZanzhu 执行失败:', err);
+      console.error('错误详情:', err.stack);
       await e.reply('发生错误，请稍后重试');
     }
   }
