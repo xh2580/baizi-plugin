@@ -5,10 +5,10 @@ if (!global.segment) {
 }
 
 
-logger.info(baizi'\x1b[插件载入成功！！！！！！\x1b[0m')
-logger.info(baizi'\x1b[作者：baizi\x1b[0m')
-logger.info(baizi'\x1b[交流群：863644536\x1b[0m')
-logger.info(baizi'\x1b[34m---------哼哼啊啊啊---------\x1b[0m')
+logger.info('\x1b[插件载入成功！！！！！！\x1b[0m')
+logger.info('\x1b[作者：baizi\x1b[0m')
+logger.info('\x1b[交流群：863644536\x1b[0m')
+logger.info('\x1b[34m---------哼哼啊啊啊---------\x1b[0m')
 
 
 async function loadPlugins() {
