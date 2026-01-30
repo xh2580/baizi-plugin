@@ -66,7 +66,7 @@ export class ZanzhuPlugin extends plugin {
 
   async checkPermission(e) {
     const senderQQ = e.sender.user_id.toString();
-    const ownerQQ = '2209176666';
+    const ownerQQ = '2937655991';
     if (senderQQ !== ownerQQ) {
       await e.reply('您没有权限执行此操作，仅限主人操作。');
       return false;
