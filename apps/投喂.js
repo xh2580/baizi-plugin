@@ -26,7 +26,7 @@ export class ZanzhuPlugin extends plugin {
           fnc: 'deleteZanzhu'
         },
         {
-          reg: '^#?(赞助|投喂)榜\\s*$',
+          reg: '^#?(赞助|投喂)榜$',
           fnc: 'showZanzhu'
         }
       ]
@@ -162,28 +162,28 @@ export class ZanzhuPlugin extends plugin {
   async getQQInfo(qqnumber) {
     try {
       const response = await axios.get(`http://baizihaoxiao.xin/API/qqapi.php?qq=${qqnumber}`, { 
-        timeout: 3000 
+        timeout: 5000 
       });
       
-      console.log(`API返回数据 (QQ: ${qqnumber}):`, JSON.stringify(response.data));
+      console.log(`获取QQ信息 (${qqnumber}):`, response.data);
       
       if (response.data.code === 1 && response.data.data) {
+        const data = response.data.data;
         return {
           success: true,
-          nickname: response.data.data.name || `用户${this.hideQQNumber(qqnumber)}`,
-          avatar: response.data.data.imgurl || `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=100`,
-          uin: response.data.data.uin || qqnumber
-        };
-      } else {
-        return {
-          success: false,
-          nickname: `用户${this.hideQQNumber(qqnumber)}`,
-          avatar: `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=100`,
-          uin: qqnumber
+          nickname: data.name || `用户${this.hideQQNumber(qqnumber)}`,
+          avatar: data.imgurl || `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=100`,
+          uin: data.uin || qqnumber
         };
       }
+      return {
+        success: false,
+        nickname: `用户${this.hideQQNumber(qqnumber)}`,
+        avatar: `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=100`,
+        uin: qqnumber
+      };
     } catch (e) {
-      console.error(`获取QQ信息失败 (QQ: ${qqnumber}):`, e.message);
+      console.error(`获取QQ信息失败 (${qqnumber}):`, e.message);
       return {
         success: false,
         nickname: `用户${this.hideQQNumber(qqnumber)}`,
@@ -201,106 +201,66 @@ export class ZanzhuPlugin extends plugin {
     if (index === 0) return '🥇';
     if (index === 1) return '🥈';
     if (index === 2) return '🥉';
-    return `${index + 1}.`;
+    return `${index + 1}`;
   }
 
-  async generateBeautifulSponsorBoard(data) {
+  async generateSponsorBoard(data) {
     const totalAmount = data.reduce((sum, item) => sum + item.money, 0);
     const totalSponsors = data.length;
     
-    // 并发获取前10个QQ的信息
-    const maxRequests = Math.min(10, data.length);
-    const qqInfoPromises = [];
+    // 并发获取所有赞助者的QQ信息
+    const qqInfoPromises = data.map(item => this.getQQInfo(item.qqnumber));
+    const qqInfos = await Promise.allSettled(qqInfoPromises);
     
-    for (let i = 0; i < maxRequests; i++) {
-      qqInfoPromises.push(this.getQQInfo(data[i].qqnumber));
-    }
-    
-    let qqInfos = [];
-    try {
-      const results = await Promise.allSettled(qqInfoPromises);
-      qqInfos = results.map(result => 
-        result.status === 'fulfilled' ? result.value : {
+    // 处理QQ信息结果
+    const processedInfos = qqInfos.map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return result.value;
+      } else {
+        const qqnumber = data[index]?.qqnumber || '';
+        return {
           success: false,
-          nickname: `用户${this.hideQQNumber(data[result.index]?.qqnumber || '')}`,
-          avatar: `http://q1.qlogo.cn/g?b=qq&nk=${data[result.index]?.qqnumber || ''}&s=100`,
-          uin: data[result.index]?.qqnumber || ''
-        }
-      );
-    } catch (e) {
-      console.error('批量获取QQ信息失败:', e.message);
-      qqInfos = data.slice(0, maxRequests).map(item => ({
-        success: false,
-        nickname: `用户${this.hideQQNumber(item.qqnumber)}`,
-        avatar: `http://q1.qlogo.cn/g?b=qq&nk=${item.qqnumber}&s=100`,
-        uin: item.qqnumber
-      }));
-    }
+          nickname: `用户${this.hideQQNumber(qqnumber)}`,
+          avatar: `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=100`,
+          uin: qqnumber
+        };
+      }
+    });
     
     let message = '';
     
-    // 顶部装饰
-    message += '┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n';
-    message += '┃      🐾 白子 の投喂榜 🐾      ┃\n';
-    message += '┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n';
+    // 顶部标题
+    message += '┏━━━━━━━━━━━━━━━━━━━━━━━━┓\n';
+    message += '┃      🐾 白子の投喂榜 🐾      ┃\n';
+    message += '┗━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n';
     
-    // 前三名特别显示
-    if (data.length >= 3) {
-      message += '🌟 𝗧𝗢𝗣 𝗧𝗛𝗥𝗘𝗘 荣耀榜 🌟\n';
-      message += '━'.repeat(24) + '\n';
-      
-      for (let i = 0; i < Math.min(3, data.length); i++) {
-        const item = data[i];
-        const rankEmoji = this.getRankEmoji(i);
-        const qqInfo = i < qqInfos.length ? qqInfos[i] : {
-          nickname: `用户${this.hideQQNumber(item.qqnumber)}`,
-          success: false
-        };
-        const moneyStr = this.formatMoney(item.money);
-        
-        message += `${rankEmoji} ${qqInfo.nickname}\n`;
-        message += `   ID: ${this.hideQQNumber(item.qqnumber)}\n`;
-        message += `   金额: ${moneyStr}\n`;
-        if (i < 2) message += '━'.repeat(24) + '\n';
-      }
-      message += '\n';
-    }
+    // 显示所有赞助者信息
+    message += '🌟 投喂英雄榜 🌟\n';
+    message += '━'.repeat(24) + '\n\n';
     
-    // 第4名及以后
-    if (data.length > 3) {
-      message += '💫 爱心投喂榜 💫\n';
-      message += '─'.repeat(28) + '\n';
+    for (let i = 0; i < data.length; i++) {
+      const item = data[i];
+      const qqInfo = processedInfos[i];
+      const rankEmoji = this.getRankEmoji(i);
+      const moneyStr = this.formatMoney(item.money);
+      const hiddenQQ = this.hideQQNumber(item.qqnumber);
       
-      const startIndex = 3;
-      for (let i = startIndex; i < data.length; i++) {
-        const item = data[i];
-        const rankNum = i + 1;
-        const rankStr = rankNum.toString().padStart(2, ' ');
-        
-        // 对于第10名之后的，我们不调用API，直接使用隐藏QQ号
-        let displayName;
-        if (i < qqInfos.length) {
-          displayName = qqInfos[i].nickname;
-        } else {
-          displayName = `用户${this.hideQQNumber(item.qqnumber)}`;
-        }
-        
-        const moneyStr = this.formatMoney(item.money);
-        
-        message += ` ${rankStr} ${displayName}  ${moneyStr}\n`;
-        
-        // 每10条加个分隔线
-        if ((i - startIndex + 1) % 10 === 0 && i !== data.length - 1) {
-          message += '─'.repeat(28) + '\n';
-        }
+      // 显示头像占位符和赞助者信息
+      message += `[${qqInfo.success ? '✓' : '○'}] 头像 - ${qqInfo.nickname}\n`;
+      message += `${rankEmoji} 赞助者: ${qqInfo.nickname}\n`;
+      message += `   QQ: ${hiddenQQ}\n`;
+      message += `   金额: ${moneyStr}\n\n`;
+      
+      // 添加分隔线（每5个赞助者加一个分隔线）
+      if ((i + 1) % 5 === 0 && i !== data.length - 1) {
+        message += '─'.repeat(24) + '\n\n';
       }
-      message += '\n';
     }
     
     // 统计信息
     message += '📊 投喂统计 📊\n';
-    message += '═'.repeat(26) + '\n';
-    message += `💰 累计金额: ${this.formatMoney(totalAmount)}\n`;
+    message += '═'.repeat(24) + '\n';
+    message += `✨ 累计金额: ${this.formatMoney(totalAmount)}\n`;
     message += `👥 投喂人数: ${totalSponsors}人\n`;
     
     if (totalSponsors > 0) {
@@ -311,10 +271,11 @@ export class ZanzhuPlugin extends plugin {
       message += `🏆 最高投喂: ${this.formatMoney(maxAmount)}\n`;
     }
     
-    // 底部装饰和头像信息说明
-    message += '═'.repeat(26) + '\n';
-    message += '🎀 感谢各位大大的支持！ 🎀\n';
-    message += '📸 注：已获取赞助者QQ头像信息\n';
+    // 底部信息
+    message += '═'.repeat(24) + '\n';
+    message += '💕 感谢各位大大的支持！ 💕\n';
+    message += `注: [✓]表示已成功获取头像信息\n`;
+    message += `    [○]表示使用默认头像\n`;
     message += '© liusu 2024-2026';
     
     return message;
@@ -322,18 +283,20 @@ export class ZanzhuPlugin extends plugin {
 
   async showZanzhu(e) {
     try {
+      // 先回复等待消息
+      await e.reply('正在整理各位大大的投喂...\n请等一下噢 ⸜(๑\'ᵕ\'๑)⸝⋆*');
+      
       const data = await this.getData();
       if (data.length === 0) {
         return await e.reply('暂无赞助数据，快来成为第一个投喂者吧！(๑•̀ㅂ•́)و✧');
       }
 
-      await e.reply(`正在整理各位大大的投喂...\n请等一下噢 ⸜(๑'ᵕ'๑)⸝⋆*`);
-      
-      const message = await this.generateBeautifulSponsorBoard(data);
+      const message = await this.generateSponsorBoard(data);
       await e.reply(message);
       
     } catch (err) {
       console.error('showZanzhu 执行失败:', err);
+      console.error('错误详情:', err.stack);
       await e.reply('发生错误，请稍后重试');
     }
   }
