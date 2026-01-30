@@ -18,10 +18,10 @@ const list = {
   "mora-plugin"   :"https://gitee.com/Rrrrrrray/mora-plugin",
   "xiaoyao-cvs-plugin":"https://gitea.com/Ctrlcvs/xiaoyao-cvs-plugin",
   "rconsole-plugin"   :"https://gitee.com/kyrzy0416/rconsole-plugin",
-  "waves-plugin"   :"https://gh.xiaohuanya.top/https://github.com/erzaozi/waves-plugin",
+  "waves-plugin"   :"https://github.com/erzaozi/waves-plugin",
   "xiaofei-plugin"   :"https://gitee.com/xfdown/xiaofei-plugin",
   "Yunzai-QQBot-plugin":"https://gitee.com/xiaoye12123/Yunzai-QQBot-Plugin",
-  "ZZZ-Plugin"  :"https://gh.xiaohuanya.top/https://github.com/ZZZure/ZZZ-Plugin",
+  "ZZZ-Plugin"  :"https://github.com/ZZZure/ZZZ-Plugin",
   "ICQQ-Plugin"   :"https://gitee.com/TimeRainStarSky/Yunzai-ICQQ-Plugin",
 }
 const map = {}
