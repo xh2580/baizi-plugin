@@ -1,12 +1,9 @@
 import fs from 'fs';
 import path from 'path';
-import puppeteer from 'puppeteer';
 import plugin from '../../../lib/plugins/plugin.js';
-import cfg from '../../../lib/config/config.js';
 import axios from 'axios';
 
 const zanzhuPath = path.join(process.cwd(), 'plugins', 'baizi-plugin', 'config', 'zanzhu.json');
-const fontPath = path.join(process.cwd(), 'plugins', 'baizi-plugin', 'resources', 'common', 'font', 'tttgbnumber.ttf');
 
 export class ZanzhuPlugin extends plugin {
   constructor() {
@@ -17,7 +14,7 @@ export class ZanzhuPlugin extends plugin {
       priority: 1,
       rule: [
         {
-          reg: '^#?赞助添加\\s*(\\d+):(\\d+(\\.\d+)?)$',
+          reg: '^#?赞助添加\\s*(\\d+):(\\d+(\\.\\d+)?)$',
           fnc: 'addZanzhu'
         },
         {
@@ -34,13 +31,6 @@ export class ZanzhuPlugin extends plugin {
         }
       ]
     });
-
-    this.browser = null;
-    // 修改保存路径到插件目录
-    this.screenshotDir = path.join(process.cwd(), 'plugins', 'baizi-plugin', 'data', 'temp');
-    if (!fs.existsSync(this.screenshotDir)) {
-      fs.mkdirSync(this.screenshotDir, { recursive: true });
-    }
   }
 
   async getData() {
@@ -182,312 +172,143 @@ export class ZanzhuPlugin extends plugin {
     }
   }
 
-  async generateHTML(data) {
+  formatMoney(money) {
+    return `¥${money.toFixed(2)}`;
+  }
+
+  getRankEmoji(index) {
+    const emojis = ['🥇', '🥈', '🥉', '🏅', '🏅'];
+    return index < emojis.length ? emojis[index] : '🎖️';
+  }
+
+  generateSeparator(length) {
+    return '─'.repeat(length);
+  }
+
+  async generateTextSponsorBoard(data) {
     const totalAmount = data.reduce((sum, item) => sum + item.money, 0);
     const totalSponsors = data.length;
-
-    const items = await Promise.all(data.map(async (item, index) => {
-      const nickname = await this.getQQNickname(item.qqnumber);
-      let rankClass = '';
-      const rankIcon = `${index + 1}`;
-      if (index === 0) rankClass = 'sponsor-card-first';
-      else if (index === 1) rankClass = 'sponsor-card-second';
-      else if (index === 2) rankClass = 'sponsor-card-third';
-      const avatarFrame = index < 3 ? `<div class="avatar-frame"></div>` : '';
-      return `
-        <div class="sponsor-card ${rankClass}">
-          <div class="sponsor-rank">${rankIcon}</div>
-          <div class="sponsor-avatar-container">
-            <img class="sponsor-avatar" src="http://q1.qlogo.cn/g?b=qq&nk=${item.qqnumber}&s=100" alt="头像">
-            ${avatarFrame}
-          </div>
-          <div class="sponsor-info">
-            <div class="sponsor-name">昵称: ${nickname}</div>
-            <div class="sponsor-id">ID: ${this.hideQQNumber(item.qqnumber)}</div>
-            <div class="sponsor-amount">投喂金额: ¥${item.money.toFixed(2)}</div>
-          </div>
-        </div>
-      `;
-    }));
-
-    const totalCard = `
-      <div class="sponsor-card sponsor-card-total">
-        <div class="sponsor-info">
-          <div class="sponsor-total">✿  总投喂金额: ¥${totalAmount.toFixed(2)}</div>
-          <div class="sponsor-total">✿  总投喂人数: ${totalSponsors}</div>
-        </div>
-      </div>
-    `;
-
-    return `
-      <!DOCTYPE html>
-      <html lang="zh-CN">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>赞助榜</title>
-        <style>
-          @font-face {
-            font-family: 'ZanzhuFont';
-            src: url('file://${fontPath}') format('truetype');
-          }
-          body { 
-            font-family: 'ZanzhuFont', 'PingFang SC', 'Microsoft YaHei', 'WenQuanYi Micro Hei', 'Segoe UI', 'Helvetica Neue', 'Arial', 'Noto Sans SC', sans-serif; 
-            background: #f8f9fa; 
-            color: #2B2C34; 
-            margin: 0; 
-            padding: 20px; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-          }
-          h1 { color: #7F5AF0; font-size: 24px; margin-bottom: 20px; }
-          h2 { text-align: center; color: #d2d2d2; font-size: 12px; font-weight: normal; }
-          .sponsor-list { width: 100%; max-width: 400px; }
-          .sponsor-card { 
-            background: white; 
-            border-radius: 12px; 
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); 
-            padding: 16px; 
-            margin-bottom: 16px; 
-            display: flex; 
-            align-items: center; 
-            position: relative; 
-          }
-          .sponsor-card-first { border: 2px solid #FFD700; }
-          .sponsor-card-second { border: 2px solid #C0C0C0; }
-          .sponsor-card-third { border: 2px solid #CD7F32; }
-          .sponsor-card-total { background: #7F5AF0; color: white; text-align: center; }
-          .sponsor-rank { font-size: 24px; margin-right: 10px; }
-          .sponsor-avatar-container { position: relative; width: 60px; height: 60px; margin-right: 16px; }
-          .sponsor-avatar { width: 60px; height: 60px; border-radius: 50%; border: 2px solid #7F5AF0; }
-          .avatar-frame { 
-            position: absolute; 
-            top: -10px; 
-            left: -10px; 
-            width: 150%; 
-            height: 150%; 
-            background: url('http://8.134.11.131/image/tx.png') no-repeat center center; 
-            background-size: cover; 
-            pointer-events: none; 
-          }
-          .sponsor-info { flex: 1; }
-          .sponsor-name { font-size: 16px; font-weight: 600; color: #2B2C34; margin-bottom: 4px; }
-          .sponsor-id { font-size: 14px; color: #666; margin-bottom: 4px; }
-          .sponsor-amount { font-size: 16px; font-weight: 600; color: #2CB67D; }
-          .sponsor-total { font-size: 18px; font-weight: 600; margin-bottom: 8px; }
-        </style>
-      </head>
-      <body>
-        <h1>🐾 白子 の投喂榜 🐾</h1>
-        <div class="sponsor-list">${totalCard}${items.join('')}</div>
-        <h2>© liusu 2024-2026</h2>
-      </body>
-      </html>
-    `;
-  }
-
-  async initBrowser() {
-    if (this.browser) return this.browser;
     
-    try {
-      console.log('正在启动浏览器...');
+    // 获取所有昵称
+    const itemsWithNicknames = await Promise.all(data.map(async (item, index) => {
+      const nickname = await this.getQQNickname(item.qqnumber);
+      return { ...item, nickname, index };
+    }));
+    
+    let message = `╔═══════════════════════════════╗\n`;
+    message += `║     🐾 白子 の投喂榜 🐾      ║\n`;
+    message += `╚═══════════════════════════════╝\n\n`;
+    
+    // 添加前三名特别标注
+    const topThree = itemsWithNicknames.slice(0, 3);
+    if (topThree.length > 0) {
+      message += `🏆 【 荣誉殿堂 】🏆\n`;
+      message += `${this.generateSeparator(20)}\n`;
       
-      // 简化浏览器启动选项
-      const launchOptions = {
-        headless: true,
-        args: [
-          '--no-sandbox',
-          'disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--single-process',
-          '--disable-web-security',
-          '--disable-features=site-per-process'
-        ]
-      };
-      
-      // 如果有配置浏览器路径就使用
-      if (cfg?.bot?.chromium_path) {
-        launchOptions.executablePath = cfg.bot.chromium_path;
+      for (const item of topThree) {
+        const rankEmoji = this.getRankEmoji(item.index);
+        message += `${rankEmoji} ${item.nickname}\n`;
+        message += `   ID: ${this.hideQQNumber(item.qqnumber)}\n`;
+        message += `   金额: ${this.formatMoney(item.money)}\n`;
+        
+        if (item.index < 2) message += `${this.generateSeparator(20)}\n`;
       }
-      
-      this.browser = await puppeteer.launch(launchOptions);
-      console.log('浏览器启动成功');
-      return this.browser;
-    } catch (error) {
-      console.error('浏览器启动失败:', error.message);
-      console.error('错误详情:', error.stack);
-      this.browser = null;
-      return null;
+      message += `\n`;
     }
+    
+    // 添加其他赞助者
+    const others = itemsWithNicknames.slice(3);
+    if (others.length > 0) {
+      message += `🎖️ 【 感谢名单 】🎖️\n`;
+      message += `${this.generateSeparator(30)}\n`;
+      
+      for (const item of others) {
+        const rankNumber = (item.index + 1).toString().padStart(2, ' ');
+        message += `  ${rankNumber}. ${item.nickname} (${this.hideQQNumber(item.qqnumber)}) - ${this.formatMoney(item.money)}\n`;
+      }
+      message += `\n`;
+    }
+    
+    // 添加统计信息
+    message += `📊 【 统计数据 】📊\n`;
+    message += `${this.generateSeparator(25)}\n`;
+    message += `🌸 总投喂金额: ${this.formatMoney(totalAmount)}\n`;
+    message += `🌸 总投喂人数: ${totalSponsors}人\n`;
+    
+    // 添加人均和最高最低
+    if (totalSponsors > 0) {
+      const avgAmount = totalAmount / totalSponsors;
+      const maxAmount = Math.max(...data.map(item => item.money));
+      const minAmount = Math.min(...data.map(item => item.money));
+      
+      message += `🌸 人均投喂: ${this.formatMoney(avgAmount)}\n`;
+      message += `🌸 最高投喂: ${this.formatMoney(maxAmount)}\n`;
+      message += `🌸 最低投喂: ${this.formatMoney(minAmount)}\n`;
+    }
+    
+    message += `\n${this.generateSeparator(35)}\n`;
+    message += `✨ 感谢各位大大的支持！✨\n`;
+    message += `© liusu 2024-2026`;
+    
+    return message;
   }
 
-  async generateScreenshot(htmlContent) {
-    let browser = await this.initBrowser();
-    if (!browser) {
-      console.error('浏览器未启动成功');
-      return null;
+  async generateSimpleSponsorBoard(data) {
+    const totalAmount = data.reduce((sum, item) => sum + item.money, 0);
+    const totalSponsors = data.length;
+    
+    let message = `┏━━━━━━━━━━━━━━━━━━━━━━━━━┓\n`;
+    message += `┃      🐾 白子 の投喂榜 🐾      ┃\n`;
+    message += `┗━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
+    
+    // 使用更简单的格式，不需要异步获取昵称
+    for (let i = 0; i < data.length; i++) {
+      const item = data[i];
+      const rank = i + 1;
+      let rankPrefix = `${rank}.`;
+      
+      if (i === 0) rankPrefix = '🥇';
+      else if (i === 1) rankPrefix = '🥈';
+      else if (i === 2) rankPrefix = '🥉';
+      else if (i < 9) rankPrefix = `${rank}.`;
+      else rankPrefix = `${rank}.`;
+      
+      message += `${rankPrefix} ${this.hideQQNumber(item.qqnumber)} - ${this.formatMoney(item.money)}\n`;
     }
-
-    let page = null;
-    try {
-      page = await browser.newPage();
-      
-      console.log('正在生成截图...');
-      
-      // 设置视口
-      await page.setViewport({
-        width: 450,
-        height: 700,
-        deviceScaleFactor: 1
-      });
-      
-      // 禁用网络请求拦截，让所有请求都通过
-      // 只在超时问题严重时才考虑拦截
-      
-      // 设置页面内容，增加超时时间到60秒
-      console.log('开始加载HTML内容...');
-      await page.setContent(htmlContent, {
-        waitUntil: 'domcontentloaded', // 只等待DOM加载完成，不等待网络资源
-        timeout: 60000
-      });
-      
-      console.log('HTML内容加载完成');
-      
-      // 等待页面渲染完成
-      await page.waitForTimeout(2000);
-      
-      const screenshotPath = path.join(this.screenshotDir, `zanzhu_${Date.now()}.png`);
-      console.log('截图保存路径:', screenshotPath);
-      
-      // 计算页面高度
-      const height = await page.evaluate(() => {
-        return Math.max(
-          document.body.scrollHeight,
-          document.body.offsetHeight,
-          document.documentElement.clientHeight,
-          document.documentElement.scrollHeight,
-          document.documentElement.offsetHeight
-        );
-      });
-      
-      console.log('页面高度:', height);
-      
-      // 重新设置视口高度为页面高度
-      await page.setViewport({
-        width: 450,
-        height: Math.min(height, 3000), // 限制最大高度
-        deviceScaleFactor: 1
-      });
-      
-      // 截图选项
-      const screenshotOptions = {
-        path: screenshotPath,
-        fullPage: true,
-        type: 'png',
-        quality: 90
-      };
-      
-      await page.screenshot(screenshotOptions);
-      
-      console.log('截图生成成功');
-      return screenshotPath;
-    } catch (err) {
-      console.error('生成截图失败:', err.message);
-      console.error('错误详情:', err.stack);
-      
-      // 保存HTML到文件，以便调试
-      try {
-        const htmlPath = path.join(this.screenshotDir, `debug_${Date.now()}.html`);
-        fs.writeFileSync(htmlPath, htmlContent);
-        console.log('HTML已保存到:', htmlPath);
-      } catch (saveErr) {
-        console.error('保存HTML失败:', saveErr.message);
-      }
-      
-      return null;
-    } finally {
-      if (page) {
-        try {
-          await page.close();
-        } catch (e) {
-          console.error('关闭页面失败:', e.message);
-        }
-      }
-    }
+    
+    message += `\n${'═'.repeat(28)}\n`;
+    message += `总投喂金额: ${this.formatMoney(totalAmount)}\n`;
+    message += `总投喂人数: ${totalSponsors}人\n`;
+    message += `${'═'.repeat(28)}\n`;
+    message += `© liusu 2024-2026`;
+    
+    return message;
   }
 
   async showZanzhu(e) {
     try {
+      await e.reply(`正在整理各位大大的投喂...\n请等一下噢 ⸜(๑'ᵕ'๑)⸝⋆*`);
+      
       const data = await this.getData();
       if (data.length === 0) {
         return await e.reply('暂无赞助数据');
       }
 
-      await e.reply(`正在整理各位大大的投喂...\n请等一下噢 ⸜(๑'ᵕ'๑)⸝⋆*`);
-      
-      const htmlContent = await this.generateHTML(data);
-      console.log('HTML内容生成完成');
-      
-      const imagePath = await this.generateScreenshot(htmlContent);
-
-      if (!imagePath) {
-        console.error('生成截图失败，检查日志获取详细信息');
-        return await e.reply('生成截图失败，可能是浏览器配置问题，请检查日志或联系管理员');
-      }
-
-      console.log('准备发送图片:', imagePath);
-      
-      // 确保文件存在
-      if (!fs.existsSync(imagePath)) {
-        console.error('截图文件不存在:', imagePath);
-        return await e.reply('生成截图失败，文件未创建成功');
+      // 根据数据量选择不同的格式
+      let message;
+      if (data.length <= 10) {
+        message = await this.generateTextSponsorBoard(data);
+      } else {
+        // 数据太多时使用简化版
+        message = await this.generateSimpleSponsorBoard(data);
       }
       
-      // 检查文件大小
-      const stats = fs.statSync(imagePath);
-      if (stats.size === 0) {
-        console.error('截图文件为空:', imagePath);
-        return await e.reply('生成截图失败，文件为空');
-      }
+      await e.reply(message);
       
-      await e.reply([segment.image(`file:///${imagePath}`)]);
-      
-      // 清理旧截图文件
-      this.cleanOldScreenshots();
     } catch (err) {
       console.error('showZanzhu 执行失败:', err);
       console.error('错误详情:', err.stack);
       await e.reply('发生错误，请稍后重试');
-    }
-  }
-
-  cleanOldScreenshots() {
-    try {
-      const files = fs.readdirSync(this.screenshotDir);
-      const screenshotFiles = files.filter(file => file.startsWith('zanzhu_') && file.endsWith('.png'));
-      
-      // 按时间排序，保留最新的5个文件
-      if (screenshotFiles.length > 5) {
-        const sortedFiles = screenshotFiles.sort((a, b) => {
-          const timeA = parseInt(a.replace('zanzhu_', '').replace('.png', ''));
-          const timeB = parseInt(b.replace('zanzhu_', '').replace('.png', ''));
-          return timeB - timeA;
-        });
-        
-        // 删除旧的截图文件
-        for (let i = 5; i < sortedFiles.length; i++) {
-          const oldFile = path.join(this.screenshotDir, sortedFiles[i]);
-          fs.unlinkSync(oldFile);
-          console.log('清理旧截图文件:', oldFile);
-        }
-      }
-    } catch (err) {
-      console.error('清理旧截图文件失败:', err.message);
     }
   }
 }
