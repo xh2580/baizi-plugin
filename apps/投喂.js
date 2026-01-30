@@ -1,10 +1,10 @@
 import fs from 'fs';
 import path from 'path';
 import puppeteer from 'puppeteer';
-import plugin from '../../../../lib/plugins/plugin.js';
-import cfg from '../../../../lib/config/config.js';
+import plugin from '../../../lib/plugins/plugin.js';
+import cfg from '../../../lib/config/config.js';
 import axios from 'axios';
-import segment from '../../../../lib/segment.js';
+import segment from '../../../lib/segment.js';
 
 const zanzhuPath = path.join(process.cwd(), 'plugins', 'baizi-plugin', 'config', 'zanzhu.json');
 if (!fs.existsSync(path.dirname(zanzhuPath))) fs.mkdirSync(path.dirname(zanzhuPath), { recursive: true });
