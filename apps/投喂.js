@@ -159,16 +159,37 @@ export class ZanzhuPlugin extends plugin {
     return `${prefix}****${suffix}`;
   }
 
-  async getQQNickname(qqnumber) {
+  async getQQInfo(qqnumber) {
     try {
-      const response = await axios.get(`http://baizihaoxiao.xin/API/qqapi.php?qq=${qqnumber}`, { timeout: 5000 });
-      if (response.data.code === 1) {
-        return response.data.data.name || '未知';
+      const response = await axios.get(`http://baizihaoxiao.xin/API/qqapi.php?qq=${qqnumber}`, { 
+        timeout: 3000 
+      });
+      
+      console.log(`API返回数据 (QQ: ${qqnumber}):`, JSON.stringify(response.data));
+      
+      if (response.data.code === 1 && response.data.data) {
+        return {
+          success: true,
+          nickname: response.data.data.name || `用户${this.hideQQNumber(qqnumber)}`,
+          avatar: response.data.data.imgurl || `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=100`,
+          uin: response.data.data.uin || qqnumber
+        };
+      } else {
+        return {
+          success: false,
+          nickname: `用户${this.hideQQNumber(qqnumber)}`,
+          avatar: `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=100`,
+          uin: qqnumber
+        };
       }
-      return '匿名';
     } catch (e) {
-      console.error('获取QQ昵称失败:', e.message);
-      return '匿名';
+      console.error(`获取QQ信息失败 (QQ: ${qqnumber}):`, e.message);
+      return {
+        success: false,
+        nickname: `用户${this.hideQQNumber(qqnumber)}`,
+        avatar: `http://q1.qlogo.cn/g?b=qq&nk=${qqnumber}&s=100`,
+        uin: qqnumber
+      };
     }
   }
 
@@ -177,137 +198,142 @@ export class ZanzhuPlugin extends plugin {
   }
 
   getRankEmoji(index) {
-    const emojis = ['🥇', '🥈', '🥉', '🏅', '🏅'];
-    return index < emojis.length ? emojis[index] : '🎖️';
+    if (index === 0) return '🥇';
+    if (index === 1) return '🥈';
+    if (index === 2) return '🥉';
+    return `${index + 1}.`;
   }
 
-  generateSeparator(length) {
-    return '─'.repeat(length);
-  }
-
-  async generateTextSponsorBoard(data) {
+  async generateBeautifulSponsorBoard(data) {
     const totalAmount = data.reduce((sum, item) => sum + item.money, 0);
     const totalSponsors = data.length;
     
-    // 获取所有昵称
-    const itemsWithNicknames = await Promise.all(data.map(async (item, index) => {
-      const nickname = await this.getQQNickname(item.qqnumber);
-      return { ...item, nickname, index };
-    }));
+    // 并发获取前10个QQ的信息
+    const maxRequests = Math.min(10, data.length);
+    const qqInfoPromises = [];
     
-    let message = `╔═══════════════════════════════╗\n`;
-    message += `║     🐾 白子 の投喂榜 🐾      ║\n`;
-    message += `╚═══════════════════════════════╝\n\n`;
+    for (let i = 0; i < maxRequests; i++) {
+      qqInfoPromises.push(this.getQQInfo(data[i].qqnumber));
+    }
     
-    // 添加前三名特别标注
-    const topThree = itemsWithNicknames.slice(0, 3);
-    if (topThree.length > 0) {
-      message += `🏆 【 荣誉殿堂 】🏆\n`;
-      message += `${this.generateSeparator(20)}\n`;
+    let qqInfos = [];
+    try {
+      const results = await Promise.allSettled(qqInfoPromises);
+      qqInfos = results.map(result => 
+        result.status === 'fulfilled' ? result.value : {
+          success: false,
+          nickname: `用户${this.hideQQNumber(data[result.index]?.qqnumber || '')}`,
+          avatar: `http://q1.qlogo.cn/g?b=qq&nk=${data[result.index]?.qqnumber || ''}&s=100`,
+          uin: data[result.index]?.qqnumber || ''
+        }
+      );
+    } catch (e) {
+      console.error('批量获取QQ信息失败:', e.message);
+      qqInfos = data.slice(0, maxRequests).map(item => ({
+        success: false,
+        nickname: `用户${this.hideQQNumber(item.qqnumber)}`,
+        avatar: `http://q1.qlogo.cn/g?b=qq&nk=${item.qqnumber}&s=100`,
+        uin: item.qqnumber
+      }));
+    }
+    
+    let message = '';
+    
+    // 顶部装饰
+    message += '┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓\n';
+    message += '┃      🐾 白子 の投喂榜 🐾      ┃\n';
+    message += '┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n';
+    
+    // 前三名特别显示
+    if (data.length >= 3) {
+      message += '🌟 𝗧𝗢𝗣 𝗧𝗛𝗥𝗘𝗘 荣耀榜 🌟\n';
+      message += '━'.repeat(24) + '\n';
       
-      for (const item of topThree) {
-        const rankEmoji = this.getRankEmoji(item.index);
-        message += `${rankEmoji} ${item.nickname}\n`;
-        message += `   ID: ${this.hideQQNumber(item.qqnumber)}\n`;
-        message += `   金额: ${this.formatMoney(item.money)}\n`;
+      for (let i = 0; i < Math.min(3, data.length); i++) {
+        const item = data[i];
+        const rankEmoji = this.getRankEmoji(i);
+        const qqInfo = i < qqInfos.length ? qqInfos[i] : {
+          nickname: `用户${this.hideQQNumber(item.qqnumber)}`,
+          success: false
+        };
+        const moneyStr = this.formatMoney(item.money);
         
-        if (item.index < 2) message += `${this.generateSeparator(20)}\n`;
+        message += `${rankEmoji} ${qqInfo.nickname}\n`;
+        message += `   ID: ${this.hideQQNumber(item.qqnumber)}\n`;
+        message += `   金额: ${moneyStr}\n`;
+        if (i < 2) message += '━'.repeat(24) + '\n';
       }
-      message += `\n`;
+      message += '\n';
     }
     
-    // 添加其他赞助者
-    const others = itemsWithNicknames.slice(3);
-    if (others.length > 0) {
-      message += `🎖️ 【 感谢名单 】🎖️\n`;
-      message += `${this.generateSeparator(30)}\n`;
+    // 第4名及以后
+    if (data.length > 3) {
+      message += '💫 爱心投喂榜 💫\n';
+      message += '─'.repeat(28) + '\n';
       
-      for (const item of others) {
-        const rankNumber = (item.index + 1).toString().padStart(2, ' ');
-        message += `  ${rankNumber}. ${item.nickname} (${this.hideQQNumber(item.qqnumber)}) - ${this.formatMoney(item.money)}\n`;
+      const startIndex = 3;
+      for (let i = startIndex; i < data.length; i++) {
+        const item = data[i];
+        const rankNum = i + 1;
+        const rankStr = rankNum.toString().padStart(2, ' ');
+        
+        // 对于第10名之后的，我们不调用API，直接使用隐藏QQ号
+        let displayName;
+        if (i < qqInfos.length) {
+          displayName = qqInfos[i].nickname;
+        } else {
+          displayName = `用户${this.hideQQNumber(item.qqnumber)}`;
+        }
+        
+        const moneyStr = this.formatMoney(item.money);
+        
+        message += ` ${rankStr} ${displayName}  ${moneyStr}\n`;
+        
+        // 每10条加个分隔线
+        if ((i - startIndex + 1) % 10 === 0 && i !== data.length - 1) {
+          message += '─'.repeat(28) + '\n';
+        }
       }
-      message += `\n`;
+      message += '\n';
     }
     
-    // 添加统计信息
-    message += `📊 【 统计数据 】📊\n`;
-    message += `${this.generateSeparator(25)}\n`;
-    message += `🌸 总投喂金额: ${this.formatMoney(totalAmount)}\n`;
-    message += `🌸 总投喂人数: ${totalSponsors}人\n`;
+    // 统计信息
+    message += '📊 投喂统计 📊\n';
+    message += '═'.repeat(26) + '\n';
+    message += `💰 累计金额: ${this.formatMoney(totalAmount)}\n`;
+    message += `👥 投喂人数: ${totalSponsors}人\n`;
     
-    // 添加人均和最高最低
     if (totalSponsors > 0) {
       const avgAmount = totalAmount / totalSponsors;
       const maxAmount = Math.max(...data.map(item => item.money));
-      const minAmount = Math.min(...data.map(item => item.money));
       
-      message += `🌸 人均投喂: ${this.formatMoney(avgAmount)}\n`;
-      message += `🌸 最高投喂: ${this.formatMoney(maxAmount)}\n`;
-      message += `🌸 最低投喂: ${this.formatMoney(minAmount)}\n`;
+      message += `📈 人均投喂: ${this.formatMoney(avgAmount)}\n`;
+      message += `🏆 最高投喂: ${this.formatMoney(maxAmount)}\n`;
     }
     
-    message += `\n${this.generateSeparator(35)}\n`;
-    message += `✨ 感谢各位大大的支持！✨\n`;
-    message += `© liusu 2024-2026`;
-    
-    return message;
-  }
-
-  async generateSimpleSponsorBoard(data) {
-    const totalAmount = data.reduce((sum, item) => sum + item.money, 0);
-    const totalSponsors = data.length;
-    
-    let message = `┏━━━━━━━━━━━━━━━━━━━━━━━━━┓\n`;
-    message += `┃      🐾 白子 の投喂榜 🐾      ┃\n`;
-    message += `┗━━━━━━━━━━━━━━━━━━━━━━━━━┛\n\n`;
-    
-    // 使用更简单的格式，不需要异步获取昵称
-    for (let i = 0; i < data.length; i++) {
-      const item = data[i];
-      const rank = i + 1;
-      let rankPrefix = `${rank}.`;
-      
-      if (i === 0) rankPrefix = '🥇';
-      else if (i === 1) rankPrefix = '🥈';
-      else if (i === 2) rankPrefix = '🥉';
-      else if (i < 9) rankPrefix = `${rank}.`;
-      else rankPrefix = `${rank}.`;
-      
-      message += `${rankPrefix} ${this.hideQQNumber(item.qqnumber)} - ${this.formatMoney(item.money)}\n`;
-    }
-    
-    message += `\n${'═'.repeat(28)}\n`;
-    message += `总投喂金额: ${this.formatMoney(totalAmount)}\n`;
-    message += `总投喂人数: ${totalSponsors}人\n`;
-    message += `${'═'.repeat(28)}\n`;
-    message += `© liusu 2024-2026`;
+    // 底部装饰和头像信息说明
+    message += '═'.repeat(26) + '\n';
+    message += '🎀 感谢各位大大的支持！ 🎀\n';
+    message += '📸 注：已获取赞助者QQ头像信息\n';
+    message += '© liusu 2024-2026';
     
     return message;
   }
 
   async showZanzhu(e) {
     try {
-      await e.reply(`正在整理各位大大的投喂...\n请等一下噢 ⸜(๑'ᵕ'๑)⸝⋆*`);
-      
       const data = await this.getData();
       if (data.length === 0) {
-        return await e.reply('暂无赞助数据');
+        return await e.reply('暂无赞助数据，快来成为第一个投喂者吧！(๑•̀ㅂ•́)و✧');
       }
 
-      // 根据数据量选择不同的格式
-      let message;
-      if (data.length <= 10) {
-        message = await this.generateTextSponsorBoard(data);
-      } else {
-        // 数据太多时使用简化版
-        message = await this.generateSimpleSponsorBoard(data);
-      }
+      await e.reply(`正在整理各位大大的投喂...\n请等一下噢 ⸜(๑'ᵕ'๑)⸝⋆*`);
       
+      const message = await this.generateBeautifulSponsorBoard(data);
       await e.reply(message);
       
     } catch (err) {
       console.error('showZanzhu 执行失败:', err);
-      console.error('错误详情:', err.stack);
       await e.reply('发生错误，请稍后重试');
     }
   }
