@@ -46,7 +46,6 @@ export class example extends plugin {
 	}
 
 	async plugin_version() {
-		//await this.reply('跑路插件当前版本：'+Version.ver);
 		return versionInfo(this.e);
 	}
 
