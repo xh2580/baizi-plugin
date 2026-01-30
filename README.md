@@ -20,7 +20,9 @@
 
 #### 🔧Yunzai 根目录执行命令安装
 
+```
 git clone https://github.com/baizinihao/baizi-plugin.git ./plugins/baizi-plugin
+```
 
 #### 🔧 安装依赖
 ```bash
@@ -39,5 +41,6 @@ pnpm i
 - [xh2580](https://github.com/xh2580)
 
 ## 其他
+
 
 如果觉得此插件对你有帮助的话,可以点一个 star,你的支持就是不断更新的动力~
